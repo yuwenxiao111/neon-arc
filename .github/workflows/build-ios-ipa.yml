@@ -1,0 +1,63 @@
+name: build-ios-ipa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+
+jobs:
+  ipa:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 解压源码打包
+        run: |
+          if [ -f src.zip ]; then
+            unzip -o -q src.zip -d .
+            echo extracted
+          fi
+          ls -la
+          ls -la app ios || true
+
+      - name: 部署游戏资源
+        run: |
+          rm -rf ios/h5
+          mkdir -p ios/h5
+          cp app/index.html ios/h5/
+          cp app/game.js ios/h5/
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        run: |
+          cd ios
+          xcodegen generate
+          ls -la
+
+      - name: 编译打包
+        run: |
+          cd ios
+          xcodebuild -project StarArc.xcodeproj -scheme StarArc -configuration Release -sdk iphoneos -archivePath "$PWD/build/StarArc.xcarchive" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" archive
+
+      - name: 组装 ipa
+        run: |
+          cd ios
+          APP=$(find build/StarArc.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -n 1)
+          echo "APP=$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry StarArc.ipa Payload
+          ls -lh StarArc.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarArc-unsigned-ipa
+          path: ios/StarArc.ipa
+          retention-days: 30
